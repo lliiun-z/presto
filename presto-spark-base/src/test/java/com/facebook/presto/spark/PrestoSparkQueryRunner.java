@@ -146,7 +146,12 @@ public class PrestoSparkQueryRunner
 
     public static PrestoSparkQueryRunner createHivePrestoSparkQueryRunner(Iterable<TpchTable<?>> tables)
     {
-        PrestoSparkQueryRunner queryRunner = new PrestoSparkQueryRunner("hive");
+        return createHivePrestoSparkQueryRunner(tables, ImmutableMap.of());
+    }
+
+    public static PrestoSparkQueryRunner createHivePrestoSparkQueryRunner(Iterable<TpchTable<?>> tables, Map<String, String> additionalConfigProperties)
+    {
+        PrestoSparkQueryRunner queryRunner = new PrestoSparkQueryRunner("hive", additionalConfigProperties);
         ExtendedHiveMetastore metastore = queryRunner.getMetastore();
         if (!metastore.getDatabase("tpch").isPresent()) {
             metastore.createDatabase(createDatabaseMetastoreObject("tpch"));
@@ -190,22 +195,28 @@ public class PrestoSparkQueryRunner
         log.info("Imported %s rows for %s in %s", rows, tableName, nanosSince(start).convertToMostSuccinctTimeUnit());
     }
 
-    public PrestoSparkQueryRunner(String defaultCatalog)
+    public PrestoSparkQueryRunner(String defaultCatalog, Map<String, String> additionalConfigProperties)
     {
         setupLogging();
 
+        ImmutableMap.Builder<String, String> configProperties = ImmutableMap.builder();
+        configProperties.put("presto.version", "testversion");
+        configProperties.put("query.hash-partition-count", Integer.toString(NODE_COUNT * 2));
+        configProperties.put("task.writer-count", Integer.toString(2));
+        configProperties.put("task.partitioned-writer-count", Integer.toString(4));
+        configProperties.putAll(additionalConfigProperties);
+
         PrestoSparkInjectorFactory injectorFactory = new PrestoSparkInjectorFactory(
                 DRIVER,
-                ImmutableMap.of(
-                        "presto.version", "testversion",
-                        "query.hash-partition-count", Integer.toString(NODE_COUNT * 2)),
+                configProperties.build(),
                 ImmutableMap.of(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
+                Optional.empty(),
                 new SqlParserOptions(),
-                ImmutableList.of(),
+                ImmutableList.of(new PrestoSparkLocalMetadataStorageModule()),
                 true);
 
         Injector injector = injectorFactory.create();
@@ -276,7 +287,6 @@ public class PrestoSparkQueryRunner
         Logging logging = Logging.initialize();
         logging.setLevel("org.apache.spark", WARN);
         logging.setLevel("org.spark_project", WARN);
-        logging.setLevel("com.facebook.presto.spark", WARN);
         logging.setLevel("com.facebook.presto.spark", WARN);
         logging.setLevel("org.apache.spark.util.ClosureCleaner", ERROR);
         logging.setLevel("com.facebook.presto.security.AccessControlManager", WARN);
@@ -365,7 +375,10 @@ public class PrestoSparkQueryRunner
         PrestoSparkQueryExecution execution = (PrestoSparkQueryExecution) executionFactory.create(
                 sparkContext,
                 createSessionInfo(session),
-                sql,
+                Optional.of(sql),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
                 Optional.empty(),
                 new TestingPrestoSparkTaskExecutorFactoryProvider(instanceId),
                 Optional.empty(),

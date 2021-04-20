@@ -154,7 +154,13 @@ public class TestFeaturesConfig
                 .setWarnOnNoTableLayoutFilter("")
                 .setInlineSqlFunctions(true)
                 .setCheckAccessControlOnUtilizedColumnsOnly(false)
-                .setAllowWindowOrderByLiterals(true));
+                .setAllowWindowOrderByLiterals(true)
+                .setEnforceFixedDistributionForOutputOperator(false)
+                .setEmptyJoinOptimization(false)
+                .setSpoolingOutputBufferEnabled(false)
+                .setSpoolingOutputBufferThreshold(new DataSize(8, MEGABYTE))
+                .setSpoolingOutputBufferTempStorage("local")
+                .setPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled(false));
     }
 
     @Test
@@ -262,6 +268,12 @@ public class TestFeaturesConfig
                 .put("check-access-control-on-utilized-columns-only", "true")
                 .put("optimizer.skip-redundant-sort", "false")
                 .put("is-allow-window-order-by-literals", "false")
+                .put("enforce-fixed-distribution-for-output-operator", "true")
+                .put("optimizer.optimize-joins-with-empty-sources", "true")
+                .put("spooling-output-buffer-enabled", "true")
+                .put("spooling-output-buffer-threshold", "16MB")
+                .put("spooling-output-buffer-temp-storage", "tempfs")
+                .put("spark.assign-bucket-to-partition-for-partitioned-table-write-enabled", "true")
                 .build();
 
         FeaturesConfig expected = new FeaturesConfig()
@@ -366,7 +378,13 @@ public class TestFeaturesConfig
                 .setInlineSqlFunctions(false)
                 .setCheckAccessControlOnUtilizedColumnsOnly(true)
                 .setSkipRedundantSort(false)
-                .setAllowWindowOrderByLiterals(false);
+                .setAllowWindowOrderByLiterals(false)
+                .setEnforceFixedDistributionForOutputOperator(true)
+                .setEmptyJoinOptimization(true)
+                .setSpoolingOutputBufferEnabled(true)
+                .setSpoolingOutputBufferThreshold(new DataSize(16, MEGABYTE))
+                .setSpoolingOutputBufferTempStorage("tempfs")
+                .setPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled(true);
         assertFullMapping(properties, expected);
     }
 

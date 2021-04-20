@@ -68,6 +68,7 @@ import static com.facebook.presto.SystemSessionProperties.getTaskConcurrency;
 import static com.facebook.presto.SystemSessionProperties.getTaskPartitionedWriterCount;
 import static com.facebook.presto.SystemSessionProperties.getTaskWriterCount;
 import static com.facebook.presto.SystemSessionProperties.isDistributedSortEnabled;
+import static com.facebook.presto.SystemSessionProperties.isEnforceFixedDistributionForOutputOperator;
 import static com.facebook.presto.SystemSessionProperties.isJoinSpillingEnabled;
 import static com.facebook.presto.SystemSessionProperties.isSpillEnabled;
 import static com.facebook.presto.SystemSessionProperties.isTableWriterMergeOperatorEnabled;
@@ -521,6 +522,7 @@ public class AddLocalExchanges
                                     variableAllocator.newVariable("partialcontext", VARBINARY),
                                     originalTableWriterNode.getColumns(),
                                     originalTableWriterNode.getColumnNames(),
+                                    originalTableWriterNode.getNotNullColumnVariables(),
                                     originalTableWriterNode.getTablePartitioningScheme(),
                                     originalTableWriterNode.getPreferredShufflePartitioningScheme(),
                                     statisticAggregations.map(StatisticAggregations.Parts::getPartialAggregation)),
@@ -542,6 +544,7 @@ public class AddLocalExchanges
                                     variableAllocator.newVariable("partialcontext", VARBINARY),
                                     originalTableWriterNode.getColumns(),
                                     originalTableWriterNode.getColumnNames(),
+                                    originalTableWriterNode.getNotNullColumnVariables(),
                                     originalTableWriterNode.getTablePartitioningScheme(),
                                     originalTableWriterNode.getPreferredShufflePartitioningScheme(),
                                     statisticAggregations.map(StatisticAggregations.Parts::getPartialAggregation)),
@@ -567,6 +570,7 @@ public class AddLocalExchanges
                                 variableAllocator.newVariable("partialcontext", VARBINARY),
                                 originalTableWriterNode.getColumns(),
                                 originalTableWriterNode.getColumnNames(),
+                                originalTableWriterNode.getNotNullColumnVariables(),
                                 originalTableWriterNode.getTablePartitioningScheme(),
                                 originalTableWriterNode.getPreferredShufflePartitioningScheme(),
                                 statisticAggregations.map(StatisticAggregations.Parts::getPartialAggregation)),
@@ -612,7 +616,10 @@ public class AddLocalExchanges
                         any().withOrderSensitivity(),
                         any().withOrderSensitivity());
             }
-            return planAndEnforceChildren(node, any(), defaultParallelism(session));
+            return planAndEnforceChildren(
+                    node,
+                    isEnforceFixedDistributionForOutputOperator(session) ? fixedParallelism() : any(),
+                    defaultParallelism(session));
         }
 
         @Override

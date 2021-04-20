@@ -110,6 +110,7 @@ public class FeaturesConfig
     private boolean forceSingleNodeOutput = true;
     private boolean pagesIndexEagerCompactionEnabled;
     private boolean distributedSort = true;
+    private boolean optimizeJoinsWithEmptySources;
 
     private boolean dictionaryAggregation;
 
@@ -176,9 +177,16 @@ public class FeaturesConfig
     private boolean skipRedundantSort = true;
     private boolean isAllowWindowOrderByLiterals = true;
 
+    private boolean spoolingOutputBufferEnabled;
+    private DataSize spoolingOutputBufferThreshold = new DataSize(8, MEGABYTE);
+    private String spoolingOutputBufferTempStorage = "local";
+
     private String warnOnNoTableLayoutFilter = "";
 
     private PartitioningPrecisionStrategy partitioningPrecisionStrategy = PartitioningPrecisionStrategy.AUTOMATIC;
+
+    private boolean enforceFixedDistributionForOutputOperator;
+    private boolean prestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled;
 
     public enum PartitioningPrecisionStrategy
     {
@@ -1514,6 +1522,78 @@ public class FeaturesConfig
     public FeaturesConfig setAllowWindowOrderByLiterals(boolean value)
     {
         this.isAllowWindowOrderByLiterals = value;
+        return this;
+    }
+
+    public boolean isEnforceFixedDistributionForOutputOperator()
+    {
+        return enforceFixedDistributionForOutputOperator;
+    }
+
+    @Config("enforce-fixed-distribution-for-output-operator")
+    public FeaturesConfig setEnforceFixedDistributionForOutputOperator(boolean enforceFixedDistributionForOutputOperator)
+    {
+        this.enforceFixedDistributionForOutputOperator = enforceFixedDistributionForOutputOperator;
+        return this;
+    }
+
+    public boolean isEmptyJoinOptimization()
+    {
+        return optimizeJoinsWithEmptySources;
+    }
+
+    @Config("optimizer.optimize-joins-with-empty-sources")
+    public FeaturesConfig setEmptyJoinOptimization(boolean value)
+    {
+        this.optimizeJoinsWithEmptySources = value;
+        return this;
+    }
+
+    public boolean isSpoolingOutputBufferEnabled()
+    {
+        return spoolingOutputBufferEnabled;
+    }
+
+    @Config("spooling-output-buffer-enabled")
+    public FeaturesConfig setSpoolingOutputBufferEnabled(boolean value)
+    {
+        this.spoolingOutputBufferEnabled = value;
+        return this;
+    }
+
+    public DataSize getSpoolingOutputBufferThreshold()
+    {
+        return spoolingOutputBufferThreshold;
+    }
+
+    @Config("spooling-output-buffer-threshold")
+    public FeaturesConfig setSpoolingOutputBufferThreshold(DataSize spoolingOutputBufferThreshold)
+    {
+        this.spoolingOutputBufferThreshold = spoolingOutputBufferThreshold;
+        return this;
+    }
+
+    public String getSpoolingOutputBufferTempStorage()
+    {
+        return spoolingOutputBufferTempStorage;
+    }
+
+    @Config("spooling-output-buffer-temp-storage")
+    public FeaturesConfig setSpoolingOutputBufferTempStorage(String spoolingOutputBufferTempStorage)
+    {
+        this.spoolingOutputBufferTempStorage = spoolingOutputBufferTempStorage;
+        return this;
+    }
+
+    public boolean isPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled()
+    {
+        return prestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled;
+    }
+
+    @Config("spark.assign-bucket-to-partition-for-partitioned-table-write-enabled")
+    public FeaturesConfig setPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled(boolean prestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled)
+    {
+        this.prestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled = prestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled;
         return this;
     }
 }

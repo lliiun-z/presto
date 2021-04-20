@@ -77,6 +77,7 @@ import static com.facebook.presto.hive.metastore.MetastoreUtil.pathExists;
 import static com.facebook.presto.hive.metastore.MetastoreUtil.renameFile;
 import static com.facebook.presto.hive.metastore.MetastoreUtil.toPartitionValues;
 import static com.facebook.presto.hive.metastore.PrestoTableType.MANAGED_TABLE;
+import static com.facebook.presto.hive.metastore.PrestoTableType.MATERIALIZED_VIEW;
 import static com.facebook.presto.hive.metastore.PrestoTableType.TEMPORARY_TABLE;
 import static com.facebook.presto.hive.metastore.PrestoTableType.VIRTUAL_VIEW;
 import static com.facebook.presto.hive.metastore.Statistics.ReduceOperator.SUBTRACT;
@@ -108,6 +109,7 @@ public class SemiTransactionalHiveMetastore
     private final ListeningExecutorService renameExecutor;
     private final boolean skipDeletionForAlter;
     private final boolean skipTargetCleanupOnRollback;
+    private final boolean undoMetastoreOperationsEnabled;
 
     @GuardedBy("this")
     private final Map<SchemaTableName, Action<TableAndMore>> tableActions = new HashMap<>();
@@ -126,13 +128,15 @@ public class SemiTransactionalHiveMetastore
             ExtendedHiveMetastore delegate,
             ListeningExecutorService renameExecutor,
             boolean skipDeletionForAlter,
-            boolean skipTargetCleanupOnRollback)
+            boolean skipTargetCleanupOnRollback,
+            boolean undoMetastoreOperationsEnabled)
     {
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
         this.delegate = requireNonNull(delegate, "delegate is null");
         this.renameExecutor = requireNonNull(renameExecutor, "renameExecutor is null");
         this.skipDeletionForAlter = skipDeletionForAlter;
         this.skipTargetCleanupOnRollback = skipTargetCleanupOnRollback;
+        this.undoMetastoreOperationsEnabled = undoMetastoreOperationsEnabled;
     }
 
     public synchronized List<String> getAllDatabases()
@@ -491,7 +495,7 @@ public class SemiTransactionalHiveMetastore
         if (!table.isPresent()) {
             throw new TableNotFoundException(schemaTableName);
         }
-        if (!table.get().getTableType().equals(MANAGED_TABLE)) {
+        if (!table.get().getTableType().equals(MANAGED_TABLE) && !table.get().getTableType().equals(MATERIALIZED_VIEW)) {
             throw new PrestoException(NOT_SUPPORTED, "Cannot delete from non-managed Hive table");
         }
         if (!table.get().getPartitionColumns().isEmpty()) {
@@ -1132,7 +1136,7 @@ public class SemiTransactionalHiveMetastore
                 return;
             }
 
-            if (table.getTableType().equals(MANAGED_TABLE)) {
+            if (table.getTableType().equals(MANAGED_TABLE) || table.getTableType().equals(MATERIALIZED_VIEW)) {
                 String targetLocation = table.getStorage().getLocation();
                 checkArgument(!targetLocation.isEmpty(), "target location is empty");
                 Optional<Path> currentPath = tableAndMore.getCurrentLocation();
@@ -1442,6 +1446,9 @@ public class SemiTransactionalHiveMetastore
 
         private void undoAddPartitionOperations()
         {
+            if (!undoMetastoreOperationsEnabled) {
+                return;
+            }
             for (PartitionAdder partitionAdder : partitionAdders.values()) {
                 List<List<String>> partitionsFailedToRollback = partitionAdder.rollback();
                 if (!partitionsFailedToRollback.isEmpty()) {
@@ -1455,6 +1462,9 @@ public class SemiTransactionalHiveMetastore
 
         private void undoAddTableOperations()
         {
+            if (!undoMetastoreOperationsEnabled) {
+                return;
+            }
             for (CreateTableOperation addTableOperation : addTableOperations) {
                 try {
                     addTableOperation.undo(delegate);
@@ -1467,6 +1477,9 @@ public class SemiTransactionalHiveMetastore
 
         private void undoAlterPartitionOperations()
         {
+            if (!undoMetastoreOperationsEnabled) {
+                return;
+            }
             for (AlterPartitionOperation alterPartitionOperation : alterPartitionOperations) {
                 try {
                     alterPartitionOperation.undo(delegate);
@@ -1479,6 +1492,9 @@ public class SemiTransactionalHiveMetastore
 
         private void undoUpdateStatisticsOperations()
         {
+            if (!undoMetastoreOperationsEnabled) {
+                return;
+            }
             for (UpdateStatisticsOperation operation : updateStatisticsOperations) {
                 try {
                     operation.undo(delegate);

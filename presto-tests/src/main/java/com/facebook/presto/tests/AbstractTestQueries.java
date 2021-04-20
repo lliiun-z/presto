@@ -165,6 +165,27 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void emptyJoins()
+    {
+        // Empty predicate
+        assertQuery("select 1 from (select * from orders where 1 = 0) DT join customer on DT.custkey=customer.custkey",
+                "select 1 from orders where 1 =0");
+
+        // Zero limit
+        assertQuery("select 1 from (select * from orders LIMIT 0) DT join customer on DT.custkey=customer.custkey",
+                "select 1 from orders where 1 =0");
+
+        // Negative test.
+        assertQuery("select 1 from (select * from orders) DT join customer on DT.custkey=customer.custkey",
+                "select 1 from orders");
+
+        // Empty null producing side for outer join. Optimization TODO.
+        assertQuery("select 1 from (select * from orders) ORD left outer join (select custkey from customer where 1=0) " +
+                        "CUST on ORD.custkey=CUST.custkey",
+                "select 1 from orders");
+    }
+
+    @Test
     public void selectNull()
     {
         assertQuery("SELECT NULL");
@@ -1154,6 +1175,11 @@ public abstract class AbstractTestQueries
         assertQuery(
                 "SELECT a, sum(b), grouping(a) FROM (VALUES ('h', 11, 0), ('k', 7, 0)) AS t (a, b, c) GROUP BY GROUPING SETS (a)",
                 "VALUES ('h', 11, 0), ('k', 7, 0)");
+
+        // Grouping sets with limit
+        assertQuery(
+                "SELECT a, sum(b) as sum FROM (VALUES ('h', 11), ('h', 12), ('k', 7)) AS t (a, b) GROUP BY GROUPING SETS ((), a) order by sum limit 1",
+                "VALUES ('k',7)");
 
         assertQuery(
                 "SELECT a, b, sum(c), grouping(a, b) FROM (VALUES ('h', 'j', 11), ('k', 'l', 7) ) AS t (a, b, c) GROUP BY GROUPING SETS ( (a), (b)) HAVING grouping(a, b) > 1 ",
@@ -3421,12 +3447,9 @@ public abstract class AbstractTestQueries
         // two level of nesting
         assertQuery("SELECT * FROM nation n WHERE 2 = (SELECT (SELECT 2 * n.nationkey))");
 
-        // redundant LIMIT in subquery
-        assertQuery("SELECT (SELECT count(*) FROM (VALUES (7,1)) t(orderkey, value) WHERE orderkey = corr_key LIMIT 1) FROM (values 7) t(corr_key)");
-
         // explicit LIMIT in subquery
         assertQueryFails(
-                "SELECT (SELECT count(*) FROM (VALUES (7,1)) t(orderkey, value) WHERE orderkey = corr_key GROUP BY value LIMIT 2) FROM (values 7) t(corr_key)",
+                "SELECT (SELECT count(*) FROM (VALUES (7,1)) t(orderkey, value) WHERE orderkey = corr_key LIMIT 1) FROM (values 7) t(corr_key)",
                 "line 1:9: Given correlated subquery is not supported");
     }
 

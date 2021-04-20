@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.spark.util;
 
+import com.facebook.airlift.json.Codec;
 import com.facebook.presto.common.block.BlockEncodingManager;
 import com.facebook.presto.spark.classloader_interface.PrestoSparkSerializedPage;
 import com.facebook.presto.spi.page.PageCompressor;
@@ -20,22 +21,34 @@ import com.facebook.presto.spi.page.PageDecompressor;
 import com.facebook.presto.spi.page.PagesSerde;
 import com.facebook.presto.spi.page.SerializedPage;
 import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdInputStream;
+import com.github.luben.zstd.ZstdOutputStream;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
+import org.apache.spark.SparkException;
+import org.apache.spark.api.java.JavaFutureAction;
+import scala.reflect.ClassTag;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.zip.DeflaterInputStream;
 import java.util.zip.InflaterOutputStream;
 
 import static com.facebook.presto.common.block.BlockUtil.compactArray;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Throwables.propagateIfPossible;
 import static com.google.common.io.ByteStreams.toByteArray;
 import static java.lang.Math.toIntExact;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 public class PrestoSparkUtils
 {
@@ -51,7 +64,8 @@ public class PrestoSparkUtils
                 compactArray(slice.byteArray(), slice.byteArrayOffset(), slice.length()),
                 serializedPage.getPositionCount(),
                 serializedPage.getUncompressedSizeInBytes(),
-                serializedPage.getPageCodecMarkers());
+                serializedPage.getPageCodecMarkers(),
+                serializedPage.getChecksum());
     }
 
     public static SerializedPage toSerializedPage(PrestoSparkSerializedPage prestoSparkSerializedPage)
@@ -60,7 +74,8 @@ public class PrestoSparkUtils
                 Slices.wrappedBuffer(prestoSparkSerializedPage.getBytes()),
                 prestoSparkSerializedPage.getPageCodecMarkers(),
                 toIntExact(prestoSparkSerializedPage.getPositionCount()),
-                prestoSparkSerializedPage.getUncompressedSizeInBytes());
+                prestoSparkSerializedPage.getUncompressedSizeInBytes(),
+                prestoSparkSerializedPage.getChecksum());
     }
 
     public static byte[] compress(byte[] bytes)
@@ -83,6 +98,31 @@ public class PrestoSparkUtils
             throw new UncheckedIOException(e);
         }
         return output.toByteArray();
+    }
+
+    public static <T> byte[] serializeZstdCompressed(Codec<T> codec, T instance)
+    {
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream();
+                ZstdOutputStream zstdOutput = new ZstdOutputStream(output)) {
+            codec.writeBytes(zstdOutput, instance);
+            zstdOutput.close();
+            output.close();
+            return output.toByteArray();
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public static <T> T deserializeZstdCompressed(Codec<T> codec, byte[] bytes)
+    {
+        try (InputStream input = new ByteArrayInputStream(bytes);
+                ZstdInputStream zstdInput = new ZstdInputStream(input)) {
+            return codec.readBytes(zstdInput);
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     public static PagesSerde createPagesSerde(BlockEncodingManager blockEncodingManager)
@@ -159,5 +199,59 @@ public class PrestoSparkUtils
                 output.position(output.position() + written);
             }
         };
+    }
+
+    public static long computeNextTimeout(long queryCompletionDeadline)
+            throws TimeoutException
+    {
+        long timeout = queryCompletionDeadline - System.currentTimeMillis();
+        if (timeout <= 0) {
+            throw new TimeoutException();
+        }
+        return timeout;
+    }
+
+    public static <T> T getActionResultWithTimeout(JavaFutureAction<T> action, long timeout, TimeUnit timeUnit)
+            throws SparkException, TimeoutException
+    {
+        long deadline = System.currentTimeMillis() + timeUnit.toMillis(timeout);
+        try {
+            while (true) {
+                long nextTimeoutInMillis = deadline - System.currentTimeMillis();
+                if (nextTimeoutInMillis <= 0) {
+                    throw new TimeoutException();
+                }
+                try {
+                    return action.get(nextTimeoutInMillis, MILLISECONDS);
+                }
+                catch (TimeoutException e) {
+                    // guard against spurious wakeup
+                    if (deadline - System.currentTimeMillis() <= 0) {
+                        throw e;
+                    }
+                }
+            }
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
+        catch (ExecutionException e) {
+            propagateIfPossible(e.getCause(), SparkException.class);
+            propagateIfPossible(e.getCause(), RuntimeException.class);
+
+            // this should never happen
+            throw new UncheckedExecutionException(e.getCause());
+        }
+        finally {
+            if (!action.isDone()) {
+                action.cancel(true);
+            }
+        }
+    }
+
+    public static <T> ClassTag<T> classTag(Class<T> clazz)
+    {
+        return scala.reflect.ClassTag$.MODULE$.apply(clazz);
     }
 }

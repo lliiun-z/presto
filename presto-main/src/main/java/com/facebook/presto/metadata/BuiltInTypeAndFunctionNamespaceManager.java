@@ -20,6 +20,7 @@ import com.facebook.presto.common.block.Block;
 import com.facebook.presto.common.block.BlockEncodingSerde;
 import com.facebook.presto.common.block.BlockSerdeUtil;
 import com.facebook.presto.common.function.OperatorType;
+import com.facebook.presto.common.function.SqlFunctionResult;
 import com.facebook.presto.common.type.ParametricType;
 import com.facebook.presto.common.type.Type;
 import com.facebook.presto.common.type.TypeManager;
@@ -525,10 +526,8 @@ public class BuiltInTypeAndFunctionNamespaceManager
 
     private void registerBuiltInTypes()
     {
-        // Manually register UNKNOWN type without a verifyTypeClass call since it is a special type that can not be used by functions
-        this.types.put(UNKNOWN.getTypeSignature(), UNKNOWN);
-
         // always add the built-in types; Presto will not function without these
+        addType(UNKNOWN);
         addType(BOOLEAN);
         addType(BIGINT);
         addType(INTEGER);
@@ -981,7 +980,7 @@ public class BuiltInTypeAndFunctionNamespaceManager
     }
 
     @Override
-    public final CompletableFuture<Block> executeFunction(FunctionHandle functionHandle, Page input, List<Integer> channels, TypeManager typeManager)
+    public final CompletableFuture<SqlFunctionResult> executeFunction(String source, FunctionHandle functionHandle, Page input, List<Integer> channels, TypeManager typeManager)
     {
         throw new IllegalStateException("Builtin function execution should be handled by the engine.");
     }

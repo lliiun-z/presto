@@ -16,6 +16,7 @@ package com.facebook.presto;
 import com.facebook.presto.execution.QueryManagerConfig;
 import com.facebook.presto.execution.QueryManagerConfig.ExchangeMaterializationStrategy;
 import com.facebook.presto.execution.TaskManagerConfig;
+import com.facebook.presto.execution.scheduler.NodeSchedulerConfig;
 import com.facebook.presto.execution.warnings.WarningCollectorConfig;
 import com.facebook.presto.execution.warnings.WarningHandlingLevel;
 import com.facebook.presto.memory.MemoryManagerConfig;
@@ -173,12 +174,17 @@ public final class SystemSessionProperties
     public static final String CHECK_ACCESS_CONTROL_ON_UTILIZED_COLUMNS_ONLY = "check_access_control_on_utilized_columns_only";
     public static final String SKIP_REDUNDANT_SORT = "skip_redundant_sort";
     public static final String ALLOW_WINDOW_ORDER_BY_LITERALS = "allow_window_order_by_literals";
+    public static final String ENFORCE_FIXED_DISTRIBUTION_FOR_OUTPUT_OPERATOR = "enforce_fixed_distribution_for_output_operator";
+    public static final String MAX_UNACKNOWLEDGED_SPLITS_PER_TASK = "max_unacknowledged_splits_per_task";
+    public static final String OPTIMIZE_JOINS_WITH_EMPTY_SOURCES = "optimize_joins_with_empty_sources";
+    public static final String SPOOLING_OUTPUT_BUFFER_ENABLED = "spooling_output_buffer_enabled";
+    public static final String SPARK_ASSIGN_BUCKET_TO_PARTITION_FOR_PARTITIONED_TABLE_WRITE_ENABLED = "spark_assign_bucket_to_partition_for_partitioned_table_write_enabled";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
     public SystemSessionProperties()
     {
-        this(new QueryManagerConfig(), new TaskManagerConfig(), new MemoryManagerConfig(), new FeaturesConfig(), new NodeMemoryConfig(), new WarningCollectorConfig());
+        this(new QueryManagerConfig(), new TaskManagerConfig(), new MemoryManagerConfig(), new FeaturesConfig(), new NodeMemoryConfig(), new WarningCollectorConfig(), new NodeSchedulerConfig());
     }
 
     @Inject
@@ -188,7 +194,8 @@ public final class SystemSessionProperties
             MemoryManagerConfig memoryManagerConfig,
             FeaturesConfig featuresConfig,
             NodeMemoryConfig nodeMemoryConfig,
-            WarningCollectorConfig warningCollectorConfig)
+            WarningCollectorConfig warningCollectorConfig,
+            NodeSchedulerConfig nodeSchedulerConfig)
     {
         sessionProperties = ImmutableList.of(
                 stringProperty(
@@ -902,7 +909,46 @@ public final class SystemSessionProperties
                         ALLOW_WINDOW_ORDER_BY_LITERALS,
                         "Allow ORDER BY literals in window functions",
                         featuresConfig.isAllowWindowOrderByLiterals(),
-                        false));
+                        false),
+                booleanProperty(
+                        ENFORCE_FIXED_DISTRIBUTION_FOR_OUTPUT_OPERATOR,
+                        "Enforce fixed distribution for output operator",
+                        featuresConfig.isEnforceFixedDistributionForOutputOperator(),
+                        true),
+                new PropertyMetadata<>(
+                        MAX_UNACKNOWLEDGED_SPLITS_PER_TASK,
+                        "Maximum number of leaf splits awaiting delivery to a given task",
+                        INTEGER,
+                        Integer.class,
+                        nodeSchedulerConfig.getMaxUnacknowledgedSplitsPerTask(),
+                        false,
+                        value -> validateIntegerValue(value, MAX_UNACKNOWLEDGED_SPLITS_PER_TASK, 1, false),
+                        object -> object),
+                booleanProperty(
+                        OPTIMIZE_JOINS_WITH_EMPTY_SOURCES,
+                        "Simplify joins with one or more empty sources",
+                        featuresConfig.isEmptyJoinOptimization(),
+                        false),
+                booleanProperty(
+                        SPOOLING_OUTPUT_BUFFER_ENABLED,
+                        "Enable spooling output buffer for terminal task",
+                        featuresConfig.isSpoolingOutputBufferEnabled(),
+                        false),
+                booleanProperty(
+                        SPARK_ASSIGN_BUCKET_TO_PARTITION_FOR_PARTITIONED_TABLE_WRITE_ENABLED,
+                        "Assign bucket to partition map for partitioned table write when adding an exchange",
+                        featuresConfig.isPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled(),
+                        true));
+    }
+
+    public static boolean isEmptyJoinOptimization(Session session)
+    {
+        return session.getSystemProperty(OPTIMIZE_JOINS_WITH_EMPTY_SOURCES, Boolean.class);
+    }
+
+    public static boolean isSpoolingOutputBufferEnabled(Session session)
+    {
+        return session.getSystemProperty(SPOOLING_OUTPUT_BUFFER_ENABLED, Boolean.class);
     }
 
     public static boolean isSkipRedundantSort(Session session)
@@ -1527,5 +1573,20 @@ public final class SystemSessionProperties
     public static boolean isCheckAccessControlOnUtilizedColumnsOnly(Session session)
     {
         return session.getSystemProperty(CHECK_ACCESS_CONTROL_ON_UTILIZED_COLUMNS_ONLY, Boolean.class);
+    }
+
+    public static boolean isEnforceFixedDistributionForOutputOperator(Session session)
+    {
+        return session.getSystemProperty(ENFORCE_FIXED_DISTRIBUTION_FOR_OUTPUT_OPERATOR, Boolean.class);
+    }
+
+    public static int getMaxUnacknowledgedSplitsPerTask(Session session)
+    {
+        return session.getSystemProperty(MAX_UNACKNOWLEDGED_SPLITS_PER_TASK, Integer.class);
+    }
+
+    public static boolean isPrestoSparkAssignBucketToPartitionForPartitionedTableWriteEnabled(Session session)
+    {
+        return session.getSystemProperty(SPARK_ASSIGN_BUCKET_TO_PARTITION_FOR_PARTITIONED_TABLE_WRITE_ENABLED, Boolean.class);
     }
 }
